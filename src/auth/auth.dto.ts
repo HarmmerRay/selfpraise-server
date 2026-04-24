@@ -18,6 +18,17 @@ export class LoginDto {
 
 export class AuthResponseDto {
   accessToken: string;
+  refreshToken: string;
+  userId: string;
+  phone: string;
+}
+
+export class RefreshTokenDto {
+  @IsString()
+  refreshToken: string;
+}
+
+export class MeResponseDto {
   userId: string;
   phone: string;
 }
