@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+.env
+audio/
+
+# Prisma
+/generated/prisma/
+
+# IDE
+.idea
+.vscode
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
