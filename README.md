@@ -213,6 +213,70 @@ npx prisma migrate dev
 npm run start:dev
 ```
 
+## Docker 部署
+
+### 镜像说明
+
+项目提供两种镜像，通过 `APP_MODE` 环境变量区分：
+
+| 镜像 Tag | 模式 | 用途 |
+|---------|------|------|
+| `harmmeray/selfpraise-server:api-latest` | API | 接收前端请求，存取数据库，投递异步任务 |
+| `harmmeray/selfpraise-server:worker-latest` | Worker | 从队列取任务，执行 LLM/TTS 等耗时操作 |
+
+### 构建与推送
+
+所有脚本在 `docker-scripts/` 目录下：
+
+```bash
+# 构建 + 推送 + 清理（一键完成）
+./docker-scripts/deploy.sh 0.0.1
+
+# 或分步执行
+./docker-scripts/build.sh 0.0.1    # 构建镜像
+./docker-scripts/push.sh 0.0.1     # 推送到 DockerHub
+./docker-scripts/clean.sh 0.0.1    # 清理本地镜像
+```
+
+### Docker Compose 部署
+
+**开发模式**（仅启动基础设施）：
+
+```bash
+docker-compose up -d
+```
+
+**生产模式**（基础设施 + API + Worker）：
+
+```bash
+docker-compose --profile prod up -d
+```
+
+### 手动运行
+
+```bash
+# 拉取镜像
+docker pull harmmeray/selfpraise-server:api-latest
+docker pull harmmeray/selfpraise-server:worker-latest
+
+# 运行 API 服务
+docker run -d \
+  --name selfpraise-api \
+  -p 3000:3000 \
+  -e DATABASE_URL="postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise" \
+  -e REDIS_HOST=redis \
+  -e REDIS_PORT=6379 \
+  harmmeray/selfpraise-server:api-latest
+
+# 运行 Worker 服务
+docker run -d \
+  --name selfpraise-worker \
+  -e DATABASE_URL="postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise" \
+  -e REDIS_HOST=redis \
+  -e REDIS_PORT=6379 \
+  harmmeray/selfpraise-server:worker-latest
+```
+
 ## 实施路线
 
 | 步骤 | 内容 |

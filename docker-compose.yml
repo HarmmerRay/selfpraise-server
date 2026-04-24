@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # ===== 基础设施 =====
   postgres:
     image: postgres:16-alpine
     container_name: selfpraise-postgres
@@ -13,6 +14,11 @@ services:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U selfpraise']
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -22,7 +28,53 @@ services:
       - '6379:6379'
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ===== 应用服务（生产部署用） =====
+  # 使用方式：docker-compose --profile prod up -d
+  api:
+    profiles: ['prod']
+    image: harmmeray/selfpraise-server:api-latest
+    container_name: selfpraise-api
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      APP_MODE: api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - audio_data:/app/audio
+
+  worker:
+    profiles: ['prod']
+    image: harmmeray/selfpraise-server:worker-latest
+    container_name: selfpraise-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      APP_MODE: worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - audio_data:/app/audio
 
 volumes:
   postgres_data:
   redis_data:
+  audio_data:

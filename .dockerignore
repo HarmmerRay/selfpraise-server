@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+generated
+.git
+.env
+audio
+*.md
+.vscode
+.idea
+*.iml
+.DS_Store
+test
+coverage
+docker-scripts
