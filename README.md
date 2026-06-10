@@ -1,8 +1,11 @@
 # SelfPraise Server
 
-> 愿景：让自己更成为自己
+> 愿景：让自己更成为自己  
+> 对外产品与域名：**HugMe**（`hugme`）；仓库目录多为 **`selfpraise-server`**。
 
 SelfPraise 服务端 —— 负责数据采集、用户状态建模、多 Agent 编排、AI 夸赞生成、TTS 语音合成，为 [SelfPraise Flutter 客户端](https://github.com/HarmmerRay/SelfPraise) 提供后端服务。
+
+**AI/Codex 辅助开发：** 先读上一级 **`AI_HUB.md`**、**`PROJECT_ENGINEERING_STANDARD.md`**；本仓库以 **`CLAUDE.md`**、**`CODEX.md`** 为日常指令集。
 
 ## 产品简介
 

@@ -6,6 +6,9 @@ import { RedisModule } from './common/redis/redis.module';
 import { InputModule } from './input/input.module';
 import { OutputModule } from './output/output.module';
 import { AuthModule } from './auth/auth.module';
+import { ConversationModule } from './conversation/conversation.module';
+import { PersonaModule } from './persona/persona.module';
+import { EpisodeModule } from './episode/episode.module';
 
 @Module({
   imports: [
@@ -19,9 +22,12 @@ import { AuthModule } from './auth/auth.module';
       },
     }),
     BullModule.registerQueue({ name: 'praise' }, { name: 'tts' }),
+    AuthModule,
     InputModule,
     OutputModule,
-    AuthModule,
+    ConversationModule,
+    PersonaModule,
+    EpisodeModule,
   ],
 })
 export class AppModule {}

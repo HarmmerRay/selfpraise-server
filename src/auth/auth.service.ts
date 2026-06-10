@@ -67,7 +67,8 @@ export class AuthService {
         phone: string;
         type: string;
       }>(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET || 'selfpraise-dev-refresh-secret',
+        secret:
+          process.env.JWT_REFRESH_SECRET || 'selfpraise-dev-refresh-secret',
       });
 
       if (payload.type !== 'refresh') {
@@ -121,7 +122,8 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(
       { sub: userId, phone, type: 'refresh' },
       {
-        secret: process.env.JWT_REFRESH_SECRET || 'selfpraise-dev-refresh-secret',
+        secret:
+          process.env.JWT_REFRESH_SECRET || 'selfpraise-dev-refresh-secret',
         expiresIn: this.refreshTokenExpiresInSeconds,
       },
     );

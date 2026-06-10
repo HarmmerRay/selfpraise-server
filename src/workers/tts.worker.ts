@@ -7,7 +7,9 @@ export class TtsWorker {
   constructor(private readonly prisma: PrismaService) {}
 
   @Process('synthesize')
-  async handleSynthesis(job: Job<{ praiseId: string; userId: string }>): Promise<void> {
+  async handleSynthesis(
+    job: Job<{ praiseId: string; userId: string }>,
+  ): Promise<void> {
     const { praiseId, userId } = job.data;
 
     const praise = await this.prisma.praise.findUnique({
@@ -20,7 +22,9 @@ export class TtsWorker {
     }
 
     // TODO: 调用阿里云 TTS API 合成语音
-    console.log(`[DEV] TTS 合成中，夸赞ID: ${praiseId}, 内容: ${praise.content}`);
+    console.log(
+      `[DEV] TTS 合成中，夸赞ID: ${praiseId}, 内容: ${praise.content}`,
+    );
 
     const audioPath = `audio/${userId}/${Date.now()}.mp3`;
 

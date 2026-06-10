@@ -14,9 +14,10 @@ export default () => ({
       appKey: process.env.ALIYUN_TTS_APP_KEY || '',
     },
   },
-  qwen: {
-    apiKey: process.env.QWEN_API_KEY || '',
-    model: process.env.QWEN_MODEL || 'qwen-turbo',
+  agnes: {
+    apiKey: process.env.AGNES_API_KEY || '',
+    model: process.env.AGNES_MODEL || 'agnes-2.0-flash',
+    baseUrl: process.env.AGNES_BASE_URL || 'https://apihub.agnes-ai.com/v1',
   },
   sms: {
     provider: process.env.SMS_PROVIDER || 'dev',
