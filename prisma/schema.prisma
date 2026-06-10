@@ -15,10 +15,95 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memos   Memo[]
-  praises Praise[]
+  persona              Persona?
+  conversationSessions ConversationSession[]
+  conversationMessages ConversationMessage[]
+  episodes             Episode[]
+  memoryChunks         MemoryChunk[]
+  memos                Memo[]
+  praises              Praise[]
 
   @@map("users")
+}
+
+model Persona {
+  id                    String    @id @default(uuid())
+  userId                String    @unique @map("user_id")
+  traits                Json      @default("{}")
+  confidenceScore       Float     @default(0.3) @map("confidence_score")
+  onboardingCompletedAt DateTime? @map("onboarding_completed_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("personas")
+}
+
+model ConversationSession {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  channel   String
+  summary   String?
+  startedAt DateTime  @default(now()) @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ConversationMessage[]
+
+  @@index([userId, startedAt])
+  @@map("conversation_sessions")
+}
+
+model ConversationMessage {
+  id         String   @id @default(uuid())
+  sessionId  String   @map("session_id")
+  userId     String   @map("user_id")
+  role       String
+  content    String   @db.Text
+  intentJson Json?    @map("intent_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([userId, createdAt])
+  @@map("conversation_messages")
+}
+
+model Episode {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  title           String
+  content         String    @db.Text
+  emotionTag      String?   @map("emotion_tag")
+  importanceScore Float     @default(0.5) @map("importance_score")
+  occurredAt      DateTime  @default(now()) @map("occurred_at")
+  sourceSessionId String?   @map("source_session_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@map("episodes")
+}
+
+model MemoryChunk {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  memoryType  String    @map("memory_type")
+  content     String    @db.Text
+  importance  Float     @default(0.5)
+  sourceRef   String?   @map("source_ref")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, memoryType])
+  @@map("memory_chunks")
 }
 
 model Memo {

@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMemoDto, MemoResponseDto } from './memo.dto';
 
@@ -6,10 +10,7 @@ import { CreateMemoDto, MemoResponseDto } from './memo.dto';
 export class MemoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateMemoDto): Promise<MemoResponseDto> {
-    // TODO: 从 JWT 中获取 userId，暂时使用占位
-    const userId = 'placeholder-user-id';
-
+  async create(userId: string, dto: CreateMemoDto): Promise<MemoResponseDto> {
     const memo = await this.prisma.memo.create({
       data: {
         userId,
@@ -21,16 +22,17 @@ export class MemoService {
     return memo;
   }
 
-  async findAll(): Promise<MemoResponseDto[]> {
-    // TODO: 从 JWT 中获取 userId 进行过滤
-    const memos = await this.prisma.memo.findMany({
+  async findAll(userId: string): Promise<MemoResponseDto[]> {
+    return this.prisma.memo.findMany({
+      where: { userId },
       orderBy: { createdAt: 'desc' },
     });
-
-    return memos;
   }
 
-  async remove(id: string): Promise<{ deleted: boolean }> {
+  async remove(userId: string, id: string): Promise<{ deleted: boolean }> {
+    const row = await this.prisma.memo.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('备忘录不存在');
+    if (row.userId !== userId) throw new ForbiddenException();
     await this.prisma.memo.delete({ where: { id } });
     return { deleted: true };
   }
