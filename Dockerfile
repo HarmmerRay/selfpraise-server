@@ -23,12 +23,15 @@ FROM node:20-alpine AS runtime
 
 WORKDIR /app
 
+# 安装 openssl（Prisma 运行时依赖）和 openssl11-compat（兼容层）
+RUN apk add --no-cache openssl openssl-dev
+
 RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
 
-RUN npm ci --omit=dev && npx prisma generate
+RUN npm ci --omit=dev && npx prisma generate && chown -R appuser:appgroup /app
 
 COPY --from=build /app/dist ./dist
 
