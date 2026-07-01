@@ -7,13 +7,6 @@ export default () => ({
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
   },
-  aliyun: {
-    accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID || '',
-    accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET || '',
-    tts: {
-      appKey: process.env.ALIYUN_TTS_APP_KEY || '',
-    },
-  },
   agnes: {
     apiKey: process.env.AGNES_API_KEY || '',
     model: process.env.AGNES_MODEL || 'agnes-2.0-flash',

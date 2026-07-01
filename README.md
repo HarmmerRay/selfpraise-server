@@ -1,125 +1,75 @@
 # SelfPraise Server
 
 > 愿景：让自己更成为自己  
-> 对外产品与域名：**HugMe**（`hugme`）；仓库目录多为 **`selfpraise-server`**。
+> 对外产品与域名：**HugMe**（`hugme`）；仓库目录名为 **`selfpraise-server`**。
 
-SelfPraise 服务端 —— 负责数据采集、用户状态建模、多 Agent 编排、AI 夸赞生成、TTS 语音合成，为 [SelfPraise Flutter 客户端](https://github.com/HarmmerRay/SelfPraise) 提供后端服务。
-
-**AI/Codex 辅助开发：** 先读上一级 **`AI_HUB.md`**、**`PROJECT_ENGINEERING_STANDARD.md`**；本仓库以 **`CLAUDE.md`**、**`CODEX.md`** 为日常指令集。
+HugMe 后端 —— 负责用户认证、画像管理、对话陪伴、事件记忆与 AI 流式回复，为 [SelfPraise Flutter 客户端](https://github.com/HarmmerRay/SelfPraise) 提供 API 服务。
 
 ## 产品简介
 
-SelfPraise 是一个 Agent 原生的个人成长系统。用户的备忘录、录音、心率、运动、学习、对话和行为等信号会进入后端，由情感、生活、健身、学习、法律、记忆等多个 Agent 协同理解，再由编排 Agent 生成最终输出，驱动前端 UI、语音、任务和提醒。
+HugMe 是一个 **Agent 原生的个人成长陪伴系统**。当前 MVP 聚焦：
 
-早期产品形态包含类似酷狗/QQ 音乐的后台播放体验：用户点击「播放」后，应用在后台持续运行，不定时语音夸赞用户。但这只是 MVP 切片，不是完整产品边界。
+1. **注册后初见问答** — 快速建立初版用户画像（`Persona`）
+2. **持续对话** — 文字 / 语音 / 视频渠道（当前已打通文字 + SSE 流式 AI）
+3. **事件沉淀** — 从对话中记录用户身上发生的事（`Episode`）
+4. **个性化陪伴** — 基于画像 traits 动态构建 prompt，生成有温度的回复
+
+长期方向仍是多 Agent 编排、`UiIntent` 驱动前端、语义记忆（pgvector/RAG），但**已移除**早期「备忘录 → 夸赞生成 → TTS 播放」链路。
 
 ### Agent 原生后端要求
 
-- 稳定：超时、重试、幂等、降级、熔断、限流、明确错误边界。
-- 高并发：耗时 Agent 工作异步化，API worker 尽量无状态，使用队列、缓存和任务状态查询。
-- 编排效果：专家 Agent 职责清晰，输入输出类型化，编排 Agent 负责优先级、冲突解决和结果合并。
-- 可观测：每次决策应能追踪 request id、用户状态、参与 Agent、输入、输出、置信度和最终意图。
-- 安全：法律、健康、心理等高影响领域必须有安全等级、保守措辞、免责声明和升级路径。
+- 稳定：超时、重试、幂等、降级、限流、明确错误边界
+- 类型化输出：逐步从纯文本回复演进为 `UiIntent` / `VoiceIntent` / `TaskIntent`
+- 可观测：request id、用户状态、参与模块、输入输出可追溯
+- 安全：心理、健康等高影响领域需保守措辞与免责声明
 
-后端最终不应只返回自然语言，而应返回类型化意图：
-
-```text
-AgentDecision -> UiIntent / VoiceIntent / TaskIntent
-```
-
-### MVP 核心链路
+### 当前核心链路
 
 ```
-备忘录（纯文本）→ 通义千问生成夸赞文案 → 阿里云 TTS 合成语音 → 客户端播放
-```
-
-### 长期核心链路
-
-```
-用户信号 → 用户状态建模 → 多 Agent 协同 → 编排决策 → UI/语音/任务意图 → 客户端个性化表达
+注册/登录 → 初见问答 → Persona.traits
+                ↓
+         开启 ConversationSession
+                ↓
+    用户消息 → SSE 流式 AI 回复（Agnes AI，按 persona 个性化）
+                ↓
+    异步沉淀 Episode / MemoryChunk（规划中）
 ```
 
 ## 技术栈
 
 | 类别 | 选型 | 说明 |
 |------|------|------|
-| 语言/框架 | **NestJS (TypeScript)** | 与 Flutter 客户端同语言生态，类型定义可共享 |
-| 数据库 | **PostgreSQL + Prisma ORM** | 结构化存储，类型安全 |
-| 缓存/队列 | **Redis + Bull** | 异步任务队列，耗时操作后台处理 |
-| 文件存储 | **本地文件（MVP）** → 七牛云 | TTS 生成的音频文件存储 |
-| LLM | **通义千问 API** | 国内合规，中文效果好 |
-| TTS | **阿里云语音合成** | 稳定，按量计费 |
-| 认证 | **手机号验证码** | 简单直接 |
+| 语言/框架 | **NestJS 11 (TypeScript)** | 模块化 API 服务 |
+| 数据库 | **PostgreSQL 16 + Prisma 5** | 结构化存储；后续 pgvector 一库两用 |
+| 缓存 | **Redis 7** | 验证码、会话缓存 |
+| LLM | **Agnes AI** | SSE 流式对话（`agnes-2.0-flash`） |
+| 认证 | **JWT 双 token** | 手机号验证码登录（开发模式固定码） |
+| 容器 | **Docker Compose** | 本地 postgres + redis；生产单 API 镜像 |
+
+> 异步 Worker（Bull 队列、TTS、记忆压缩等）已从当前代码移除，待产品需要时再按模块边界重新引入。
 
 ## 项目结构
 
 ```
 selfpraise-server/
 ├── src/
-│   ├── input/                        # 数据输入层
-│   │   ├── memo/                     # 备忘录（MVP 唯一数据源）
-│   │   │   ├── memo.controller.ts
-│   │   │   ├── memo.service.ts
-│   │   │   └── memo.dto.ts
-│   │   └── input.module.ts
-│   │
-│   ├── output/                       # 数据输出层
-│   │   ├── praise/                   # 夸赞生成
-│   │   │   ├── praise.controller.ts
-│   │   │   ├── praise.service.ts
-│   │   │   └── praise.dto.ts
-│   │   ├── tts/                      # 语音合成
-│   │   │   ├── tts.service.ts
-│   │   │   └── tts.dto.ts
-│   │   └── output.module.ts
-│   │
-│   ├── auth/                         # 手机号认证
-│   │   ├── auth.controller.ts
-│   │   ├── auth.service.ts
-│   │   └── auth.dto.ts
-│   │
-│   ├── workers/                      # 后台任务处理
-│   │   ├── praise.worker.ts          # LLM 夸赞生成
-│   │   └── tts.worker.ts             # TTS 音频合成
-│   │
-│   ├── common/                       # 公共基础设施
-│   │   ├── guards/
-│   │   ├── filters/
-│   │   └── interceptors/
-│   │
-│   ├── prisma/                       # 数据库
-│   │   └── schema.prisma
-│   │
-│   ├── config/                       # 配置管理
-│   │   └── configuration.ts
-│   │
+│   ├── auth/                 # 手机号验证码 + JWT
+│   ├── persona/              # 用户画像 CRUD、onboarding 完成标记
+│   ├── conversation/         # 会话、消息、SSE 流式 AI（AgnesLlmService）
+│   ├── episode/              # 用户事件记录
+│   ├── common/redis/         # Redis 封装
+│   ├── prisma/               # PrismaService
+│   ├── config/               # 配置管理
 │   ├── app.module.ts
-│   ├── main.ts                       # API 服务入口
-│   └── main-worker.ts                # Worker 服务入口
-│
-├── docker-compose.yml                # PostgreSQL + Redis
+│   └── main.ts               # API 入口
+├── prisma/
+│   ├── schema.prisma
+│   └── migrations/
+├── docker-compose.yml        # PostgreSQL + Redis（prod profile 含 API）
+├── Dockerfile
+├── docker-scripts/           # build / push / deploy / clean
 ├── package.json
-├── tsconfig.json
-├── .env.example
 └── README.md
-```
-
-## 两种启动模式
-
-| 模式 | 入口 | 作用 |
-|------|------|------|
-| **API 模式** | `main.ts` | 接收前端请求，存取数据库，投递异步任务到队列 |
-| **Worker 模式** | `main-worker.ts` | 从队列取任务，执行 LLM 夸赞生成、TTS 语音合成 |
-
-```bash
-# 启动 API 服务
-npm run start:api
-
-# 启动 Worker 服务
-npm run start:worker
-
-# 开发模式（两个都启动）
-npm run start:dev
 ```
 
 ## 数据库设计
@@ -129,80 +79,81 @@ npm run start:dev
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | UUID | 主键 |
-| phone | VARCHAR | 手机号 |
+| phone | VARCHAR | 手机号（唯一） |
 | nickname | VARCHAR | 昵称（可选） |
 | avatar_url | VARCHAR | 头像（可选） |
-| created_at | TIMESTAMP | 创建时间 |
-| updated_at | TIMESTAMP | 更新时间 |
+| created_at / updated_at | TIMESTAMP | 时间戳 |
 
-### memos（备忘录）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | UUID | 主键 |
-| user_id | UUID | 关联用户 |
-| title | VARCHAR | 标题 |
-| content | TEXT | 正文 |
-| created_at | TIMESTAMP | 创建时间 |
-| updated_at | TIMESTAMP | 更新时间 |
-
-### praises（夸赞）
+### personas（用户画像）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | UUID | 主键 |
-| user_id | UUID | 关联用户 |
-| content | TEXT | AI 生成的夸赞文案 |
-| audio_path | VARCHAR | 音频文件路径 |
-| status | ENUM | pending / generated / synthesized |
-| created_at | TIMESTAMP | 创建时间 |
-| updated_at | TIMESTAMP | 更新时间 |
+| user_id | UUID | 关联用户（唯一） |
+| traits | JSONB | 画像字段（语气偏好、压力回应、近期关注等） |
+| confidence_score | FLOAT | 画像置信度 |
+| onboarding_completed_at | TIMESTAMP | 初见完成时间 |
+
+### conversation_sessions / conversation_messages
+
+| 表 | 说明 |
+|----|------|
+| conversation_sessions | 会话（channel: text/voice/video，summary，起止时间） |
+| conversation_messages | 消息（role: user/assistant/system，content，intent_json） |
+
+### episodes（用户事件）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| title / content | TEXT | 事件标题与内容 |
+| emotion_tag | VARCHAR | 情绪标签 |
+| importance_score | FLOAT | 重要度 0–1 |
+| occurred_at | TIMESTAMP | 发生时间 |
+| source_session_id | UUID | 来源会话（可选） |
+
+### memory_chunks（语义记忆，表已建，向量检索待接）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| memory_type | VARCHAR | episode / goal / emotion / preference |
+| content | TEXT | 记忆原文 |
+| importance | FLOAT | 重要度 |
 
 ## API 设计
 
 ### 认证
 
-- `POST /api/auth/send-code` — 发送验证码
-- `POST /api/auth/login` — 手机号 + 验证码登录
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/send-code` | 发送验证码 |
+| POST | `/api/auth/login` | 登录，返回 access + refresh token |
+| POST | `/api/auth/refresh` | 刷新 token |
+| GET | `/api/auth/me` | 当前用户信息 |
 
-### Input（备忘录）
+### 画像
 
-- `POST   /api/input/memo` — 创建备忘录
-- `GET    /api/input/memo` — 查询备忘录列表
-- `DELETE /api/input/memo/:id` — 删除备忘录
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/persona/me` | 获取当前用户画像 |
+| PATCH | `/api/v1/persona/me` | 更新 traits / 标记 onboarding 完成 |
 
-### Output（夸赞）
+### 对话
 
-- `POST /api/output/praise/generate` — 手动触发生成夸赞
-- `GET  /api/output/praise` — 查询夸赞列表
-- `GET  /api/output/praise/:id/audio` — 获取夸赞音频文件
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/conversations/sessions` | 创建会话 |
+| GET | `/api/v1/conversations/sessions` | 会话列表 |
+| POST | `/api/v1/conversations/sessions/:id/messages` | 追加消息 |
+| GET | `/api/v1/conversations/sessions/:id/messages` | 消息列表 |
+| POST | `/api/v1/conversations/sessions/:id/end` | 结束会话 |
+| GET (SSE) | `/api/v1/conversations/sessions/:id/chat/stream` | 流式 AI 回复 |
 
-## 核心数据流
+### 事件
 
-```
-1. 用户注册/登录（手机号验证码）
-2. 用户写备忘录 → POST /api/input/memo → 存数据库
-3. 投递异步任务到 Bull 队列
-       │
-       ▼
-   praise.worker：读取用户备忘录 → 全量组装 Prompt → 调用通义千问 → 存夸赞文案
-       │
-       ▼
-   tts.worker：夸赞文案 → 调用阿里云 TTS → 音频存本地 → 更新 audio_path
-       │
-       ▼
-4. 客户端拉取夸赞音频 → GET /api/output/praise → 播放
-```
-
-## AI 分析策略
-
-### 当前（MVP）：全量发送
-
-将用户所有备忘录组装成 Prompt，一次性发送给通义千问生成夸赞。用户初期备忘录不多，Token 消耗可控。
-
-### 后续优化：用户画像摘要
-
-维护一份用户画像摘要（几百字），生成夸赞时用「摘要 + 最近几条备忘录」组装 Prompt，Token 更省、信息更完整。
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/episodes` | 创建事件 |
+| GET | `/api/v1/episodes` | 事件列表 |
 
 ## 快速开始
 
@@ -215,102 +166,65 @@ npm run start:dev
 ### 安装与运行
 
 ```bash
-# 克隆仓库
 git clone https://github.com/HarmmerRay/selfpraise-server.git
 cd selfpraise-server
 
-# 安装依赖
 npm install
 
 # 启动 PostgreSQL 和 Redis
 docker-compose up -d
 
-# 配置环境变量
 cp .env.example .env
-# 编辑 .env 填入数据库连接、通义千问 API Key、阿里云 TTS 配置等
+# 编辑 .env：DATABASE_URL、AGNES_API_KEY 等
 
-# 初始化数据库
-npx prisma migrate dev
-
-# 启动开发服务
+npx prisma migrate deploy
 npm run start:dev
 ```
 
+API 默认监听 `http://localhost:3000`。
+
 ## Docker 部署
 
-### 镜像说明
+### 镜像
 
-项目提供两种镜像，通过 `APP_MODE` 环境变量区分：
-
-| 镜像 Tag | 模式 | 用途 |
-|---------|------|------|
-| `harmmeray/selfpraise-server:api-latest` | API | 接收前端请求，存取数据库，投递异步任务 |
-| `harmmeray/selfpraise-server:worker-latest` | Worker | 从队列取任务，执行 LLM/TTS 等耗时操作 |
+| 镜像 Tag | 用途 |
+|---------|------|
+| `harmmeray/selfpraise-server:api-latest` | API 服务 |
 
 ### 构建与推送
 
-所有脚本在 `docker-scripts/` 目录下：
-
 ```bash
-# 构建 + 推送 + 清理（一键完成）
-./docker-scripts/deploy.sh 0.0.1
+./docker-scripts/deploy.sh 0.0.1   # 构建 + 推送 + 清理
 
-# 或分步执行
-./docker-scripts/build.sh 0.0.1    # 构建镜像
-./docker-scripts/push.sh 0.0.1     # 推送到 DockerHub
-./docker-scripts/clean.sh 0.0.1    # 清理本地镜像
+# 或分步
+./docker-scripts/build.sh 0.0.1
+./docker-scripts/push.sh 0.0.1
 ```
 
-### Docker Compose 部署
+### Docker Compose
 
-**开发模式**（仅启动基础设施）：
+**开发**（仅基础设施）：
 
 ```bash
 docker-compose up -d
 ```
 
-**生产模式**（基础设施 + API + Worker）：
+**生产**（基础设施 + API）：
 
 ```bash
 docker-compose --profile prod up -d
 ```
 
-### 手动运行
-
-```bash
-# 拉取镜像
-docker pull harmmeray/selfpraise-server:api-latest
-docker pull harmmeray/selfpraise-server:worker-latest
-
-# 运行 API 服务
-docker run -d \
-  --name selfpraise-api \
-  -p 3000:3000 \
-  -e DATABASE_URL="postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise" \
-  -e REDIS_HOST=redis \
-  -e REDIS_PORT=6379 \
-  harmmeray/selfpraise-server:api-latest
-
-# 运行 Worker 服务
-docker run -d \
-  --name selfpraise-worker \
-  -e DATABASE_URL="postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise" \
-  -e REDIS_HOST=redis \
-  -e REDIS_PORT=6379 \
-  harmmeray/selfpraise-server:worker-latest
-```
-
 ## 实施路线
 
-| 步骤 | 内容 |
-|------|------|
-| Step 1 | 项目初始化（NestJS + Prisma + Redis + Docker） |
-| Step 2 | 用户认证（手机号验证码） |
-| Step 3 | 备忘录 CRUD |
-| Step 4 | 夸赞生成（通义千问） |
-| Step 5 | TTS 语音合成（阿里云） |
-| Step 6 | 客户端对接 |
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1 | NestJS + Prisma + Redis + Docker + JWT 认证 | ✅ |
+| Phase 2 | Persona / Conversation / Episode 模块 + SSE 流式 AI | ✅ 骨架 |
+| Phase 3 | 语音/视频 onboarding、STT、UiIntent 渲染 | 进行中 |
+| Phase 4 | pgvector 记忆检索、Episode 自动提炼 | 待做 |
+| Phase 5 | K8s 部署、监控、CI/CD | 设计中 |
 
 ## 相关仓库
 
-- [SelfPraise Flutter 客户端](https://github.com/HarmmerRay/SelfPraise) — Flutter 全平台客户端
+- [SelfPraise Flutter 客户端](https://github.com/HarmmerRay/SelfPraise) — HugMe 移动端

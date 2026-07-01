@@ -24,25 +24,16 @@ if ! docker info 2>/dev/null | grep -q "Username: ${DOCKERHUB_USER}"; then
   docker login -u "${DOCKERHUB_USER}"
 fi
 
-# 推送 API 镜像
 echo ""
 echo ">>> 推送 API 镜像..."
 docker push "${FULL_IMAGE}:api-${VERSION}"
 docker push "${FULL_IMAGE}:api-latest"
 echo "✅ API 镜像推送完成"
 
-# 推送 Worker 镜像
-echo ""
-echo ">>> 推送 Worker 镜像..."
-docker push "${FULL_IMAGE}:worker-${VERSION}"
-docker push "${FULL_IMAGE}:worker-latest"
-echo "✅ Worker 镜像推送完成"
-
 echo ""
 echo "=========================================="
 echo " 推送完成！"
 echo "=========================================="
-echo "  API:    docker pull ${FULL_IMAGE}:api-${VERSION}"
-echo "  Worker: docker pull ${FULL_IMAGE}:worker-${VERSION}"
+echo "  API: docker pull ${FULL_IMAGE}:api-${VERSION}"
 echo ""
 echo "清理本地镜像: ./docker-scripts/clean.sh ${VERSION}"

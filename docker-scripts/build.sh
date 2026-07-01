@@ -18,29 +18,15 @@ echo " 镜像名: ${FULL_IMAGE}"
 echo " 版本:   ${VERSION}"
 echo "=========================================="
 
-# 构建 API 镜像
 echo ""
 echo ">>> 构建 API 镜像..."
 docker build \
-  --build-arg APP_MODE=api \
   -t "${FULL_IMAGE}:api-${VERSION}" \
   -t "${FULL_IMAGE}:api-latest" \
   .
 
 echo "✅ API 镜像构建完成: ${FULL_IMAGE}:api-${VERSION}"
 
-# 构建 Worker 镜像
-echo ""
-echo ">>> 构建 Worker 镜像..."
-docker build \
-  --build-arg APP_MODE=worker \
-  -t "${FULL_IMAGE}:worker-${VERSION}" \
-  -t "${FULL_IMAGE}:worker-latest" \
-  .
-
-echo "✅ Worker 镜像构建完成: ${FULL_IMAGE}:worker-${VERSION}"
-
-# 显示构建结果
 echo ""
 echo "=========================================="
 echo " 构建完成，本地镜像列表："

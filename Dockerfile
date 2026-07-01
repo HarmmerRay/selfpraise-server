@@ -35,13 +35,8 @@ RUN npm ci --omit=dev && npx prisma generate && chown -R appuser:appgroup /app
 
 COPY --from=build /app/dist ./dist
 
-RUN mkdir -p /app/audio && chown -R appuser:appgroup /app/audio
-
 USER appuser
 
 EXPOSE 3000
 
-# 通过 APP_MODE 环境变量切换启动模式
-ENV APP_MODE=api
-
-CMD ["sh", "-c", "if [ \"$APP_MODE\" = 'worker' ]; then node dist/main-worker.js; else node dist/main.js; fi"]
+CMD ["node", "dist/main.js"]

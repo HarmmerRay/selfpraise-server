@@ -47,34 +47,12 @@ services:
       DATABASE_URL: postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      APP_MODE: api
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - audio_data:/app/audio
-
-  worker:
-    profiles: ['prod']
-    image: harmmeray/selfpraise-server:worker-latest
-    container_name: selfpraise-worker
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://selfpraise:selfpraise_dev@postgres:5432/selfpraise
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      APP_MODE: worker
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - audio_data:/app/audio
 
 volumes:
   postgres_data:
   redis_data:
-  audio_data:
