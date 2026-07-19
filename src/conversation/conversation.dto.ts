@@ -31,9 +31,13 @@ export class SessionResponseDto {
   id!: string;
   userId!: string;
   channel!: string;
-  summary!: string | null;
+  /** 首条用户消息截断生成的列表标题 */
+  title!: string | null;
   startedAt!: Date;
-  endedAt!: Date | null;
+  lastMessageAt!: Date;
+  archivedAt!: Date | null;
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 export class MessageResponseDto {

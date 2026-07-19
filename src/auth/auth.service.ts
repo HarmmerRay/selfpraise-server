@@ -1,21 +1,34 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AuthResponseDto } from './auth.dto';
+import { bid, snowflake } from '../common/id/snowflake';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly accessTokenExpiresInSeconds: number;
+  private readonly refreshTokenExpiresInSeconds: number;
+  private readonly jwtSecret: string;
+  private readonly jwtRefreshSecret: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly redis: RedisService,
-  ) {}
-
-  private readonly accessTokenExpiresInSeconds = 60 * 30; // 30 分钟
-  private readonly refreshTokenExpiresInSeconds = 60 * 60 * 24 * 180; // 半年
+    config: ConfigService,
+  ) {
+    this.accessTokenExpiresInSeconds =
+      config.get<number>('jwt.accessExpiresInSeconds') ?? 1800;
+    this.refreshTokenExpiresInSeconds =
+      config.get<number>('jwt.refreshExpiresInSeconds') ?? 60 * 60 * 24 * 180;
+    this.jwtSecret =
+      config.get<string>('jwt.secret') || 'selfpraise-dev-secret';
+    this.jwtRefreshSecret =
+      config.get<string>('jwt.refreshSecret') || 'selfpraise-dev-refresh-secret';
+  }
 
   async sendCode(phone: string): Promise<{ sent: boolean }> {
     const code = '123456'; // MVP: 固定验证码
@@ -36,26 +49,26 @@ export class AuthService {
       throw new UnauthorizedException('验证码错误或已过期');
     }
 
-    // 验证通过后删除验证码
     await this.redis.del(key);
 
     let user = await this.prisma.user.findUnique({ where: { phone } });
 
     if (!user) {
       user = await this.prisma.user.create({
-        data: { phone },
+        data: { id: snowflake.nextId(), phone },
       });
     }
 
+    const userId = user.id.toString();
     const { accessToken, refreshToken } = await this.issueTokens(
-      user.id,
+      userId,
       user.phone,
     );
 
     return {
       accessToken,
       refreshToken,
-      userId: user.id,
+      userId,
       phone: user.phone,
     };
   }
@@ -67,8 +80,7 @@ export class AuthService {
         phone: string;
         type: string;
       }>(refreshToken, {
-        secret:
-          process.env.JWT_REFRESH_SECRET || 'selfpraise-dev-refresh-secret',
+        secret: this.jwtRefreshSecret,
       });
 
       if (payload.type !== 'refresh') {
@@ -82,17 +94,18 @@ export class AuthService {
       }
 
       const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
+        where: { id: bid(payload.sub) },
       });
       if (!user) {
         throw new UnauthorizedException('用户不存在');
       }
 
-      const tokens = await this.issueTokens(user.id, user.phone);
+      const userId = user.id.toString();
+      const tokens = await this.issueTokens(userId, user.phone);
       return {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
-        userId: user.id,
+        userId,
         phone: user.phone,
       };
     } catch {
@@ -101,11 +114,13 @@ export class AuthService {
   }
 
   async me(userId: string): Promise<{ userId: string; phone: string }> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: bid(userId) },
+    });
     if (!user) {
       throw new UnauthorizedException('用户不存在');
     }
-    return { userId: user.id, phone: user.phone };
+    return { userId: user.id.toString(), phone: user.phone };
   }
 
   private async issueTokens(
@@ -115,15 +130,14 @@ export class AuthService {
     const accessToken = this.jwtService.sign(
       { sub: userId, phone, type: 'access' },
       {
-        secret: process.env.JWT_SECRET || 'selfpraise-dev-secret',
+        secret: this.jwtSecret,
         expiresIn: this.accessTokenExpiresInSeconds,
       },
     );
     const refreshToken = this.jwtService.sign(
       { sub: userId, phone, type: 'refresh' },
       {
-        secret:
-          process.env.JWT_REFRESH_SECRET || 'selfpraise-dev-refresh-secret',
+        secret: this.jwtRefreshSecret,
         expiresIn: this.refreshTokenExpiresInSeconds,
       },
     );

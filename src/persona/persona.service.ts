@@ -1,34 +1,75 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PersonaResponseDto } from './persona.dto';
 import type { PatchPersonaDto } from './persona.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { LtmCacheService } from '../memory/short-term-memory.service';
+import { bid, snowflake } from '../common/id/snowflake';
 
+const TRAIT_REF_PREFIX = 'onboarding:trait:';
+const COMPLETED_REF = 'onboarding:completed';
+const CONFIDENCE_REF = 'onboarding:confidence';
+
+/**
+ * 兼容旧 /persona/me API；持久化落在 memory_chunks。
+ */
 @Injectable()
 export class PersonaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ltmCache: LtmCacheService,
+  ) {}
 
   async getMine(userId: string): Promise<PersonaResponseDto> {
-    let row = await this.prisma.persona.findUnique({ where: { userId } });
+    const uid = bid(userId);
+    const chunks = await this.prisma.memoryChunk.findMany({
+      where: {
+        userId: uid,
+        sourceRef: { startsWith: 'onboarding:' },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
 
-    if (!row) {
-      row = await this.prisma.persona.create({
-        data: {
-          userId,
-          traits: {},
-          confidenceScore: 0.2,
-        },
-      });
+    const traits: Record<string, unknown> = {};
+    let onboardingCompletedAt: Date | null = null;
+    let confidenceScore = 0.3;
+    let createdAt = new Date();
+    let updatedAt = new Date();
+
+    if (chunks.length === 0) {
+      return {
+        id: userId,
+        userId,
+        traits: {},
+        confidenceScore,
+        onboardingCompletedAt: null,
+        createdAt,
+        updatedAt,
+      };
     }
 
-    const traits =
-      typeof row.traits === 'object' && row.traits !== null
-        ? (row.traits as Record<string, unknown>)
-        : {};
+    createdAt = chunks[chunks.length - 1].createdAt;
+    updatedAt = chunks[0].updatedAt;
+
+    for (const c of chunks) {
+      const ref = c.sourceRef ?? '';
+      if (ref.startsWith(TRAIT_REF_PREFIX)) {
+        traits[ref.slice(TRAIT_REF_PREFIX.length)] = c.content;
+      } else if (ref === COMPLETED_REF) {
+        onboardingCompletedAt = c.createdAt;
+      } else if (ref === CONFIDENCE_REF) {
+        const n = Number(c.content);
+        if (!Number.isNaN(n)) confidenceScore = n;
+      }
+    }
 
     return {
-      ...row,
+      id: userId,
+      userId,
       traits,
+      confidenceScore,
+      onboardingCompletedAt,
+      createdAt,
+      updatedAt,
     };
   }
 
@@ -36,36 +77,77 @@ export class PersonaService {
     userId: string,
     dto: PatchPersonaDto,
   ): Promise<PersonaResponseDto> {
-    await this.getMine(userId);
-
-    const data: Prisma.PersonaUpdateInput = {};
-
-    if (dto.traits !== undefined) {
-      data.traits = dto.traits as Prisma.InputJsonValue;
-    }
-    if (dto.confidenceScore !== undefined) {
-      data.confidenceScore = dto.confidenceScore;
-    }
-    if (dto.completeOnboarding === true) {
-      data.onboardingCompletedAt = new Date();
-    }
-
-    if (Object.keys(data).length === 0) {
+    if (
+      dto.traits === undefined &&
+      dto.confidenceScore === undefined &&
+      dto.completeOnboarding !== true
+    ) {
       throw new BadRequestException(
         '至少提供 traits、confidenceScore 或 completeOnboarding(true) 之一',
       );
     }
 
-    const row = await this.prisma.persona.update({
-      where: { userId },
-      data,
-    });
+    const uid = bid(userId);
 
-    const traits =
-      typeof row.traits === 'object' && row.traits !== null
-        ? (row.traits as Record<string, unknown>)
-        : {};
+    if (dto.traits !== undefined) {
+      await this.prisma.memoryChunk.deleteMany({
+        where: {
+          userId: uid,
+          sourceRef: { startsWith: TRAIT_REF_PREFIX },
+        },
+      });
+      const entries = Object.entries(dto.traits).filter(
+        ([, v]) => v !== null && v !== undefined && `${v}`.trim() !== '',
+      );
+      if (entries.length > 0) {
+        await this.prisma.memoryChunk.createMany({
+          data: entries.map(([key, value]) => ({
+            id: snowflake.nextId(),
+            userId: uid,
+            memoryType: 'preference',
+            content: String(value),
+            importance: 0.7,
+            sourceRef: `${TRAIT_REF_PREFIX}${key}`,
+          })),
+        });
+      }
+    }
 
-    return { ...row, traits };
+    if (dto.confidenceScore !== undefined) {
+      await this.prisma.memoryChunk.deleteMany({
+        where: { userId: uid, sourceRef: CONFIDENCE_REF },
+      });
+      await this.prisma.memoryChunk.create({
+        data: {
+          id: snowflake.nextId(),
+          userId: uid,
+          memoryType: 'preference',
+          content: String(dto.confidenceScore),
+          importance: 0.5,
+          sourceRef: CONFIDENCE_REF,
+        },
+      });
+    }
+
+    if (dto.completeOnboarding === true) {
+      const existing = await this.prisma.memoryChunk.findFirst({
+        where: { userId: uid, sourceRef: COMPLETED_REF },
+      });
+      if (!existing) {
+        await this.prisma.memoryChunk.create({
+          data: {
+            id: snowflake.nextId(),
+            userId: uid,
+            memoryType: 'preference',
+            content: 'completed',
+            importance: 1,
+            sourceRef: COMPLETED_REF,
+          },
+        });
+      }
+    }
+
+    await this.ltmCache.del(userId);
+    return this.getMine(userId);
   }
 }

@@ -70,8 +70,20 @@ export class AgnesLlmService {
    * 逐 delta yield 文本片段（AsyncGenerator）。
    */
   async *streamChat(messages: ChatMessage[]): AsyncGenerator<string> {
-    if (!this.apiKey) {
-      throw new Error('AGNES_API_KEY 未配置');
+    const llmMode = this.configService.get<string>('LLM_MODE', '') ||
+      process.env.LLM_MODE ||
+      '';
+    if (!this.apiKey || llmMode === 'fake') {
+      // 本地无 key / 显式 fake：产出可验收的 step→delta→done 流
+      const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+      const hint = (lastUser?.content ?? '').slice(0, 40);
+      const text = hint.includes('解释') || hint.includes('关键词')
+        ? `（开发假回复）这个词可以理解为对话里提到的核心概念。结合你刚才说的内容：「${hint}」——先抓住定义，再想一个小例子就够用了。`
+        : `（开发假回复）我听到了：「${hint || '你的分享'}」。先肯定你愿意开口这件事本身，就已经很棒了。想继续聊聊细节吗？`;
+      for (const part of text.match(/.{1,12}/g) ?? [text]) {
+        yield part;
+      }
+      return;
     }
 
     const url = `${this.baseUrl}/chat/completions`;

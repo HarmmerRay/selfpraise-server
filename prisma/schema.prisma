@@ -1,105 +1,115 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm]
 }
 
+/// 对齐 .agent/doc/db_design.md — 5 表 + 雪花 BIGINT PK
 model User {
-  id        String   @id @default(uuid())
-  phone     String   @unique
-  nickname  String?
+  id        BigInt   @id
+  phone     String   @unique @db.VarChar(20)
+  nickname  String?  @db.VarChar(64)
   avatarUrl String?  @map("avatar_url")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  persona              Persona?
   conversationSessions ConversationSession[]
   conversationMessages ConversationMessage[]
-  episodes             Episode[]
   memoryChunks         MemoryChunk[]
+  llmUsages            LlmUsage[]
 
   @@map("users")
 }
 
-model Persona {
-  id                    String    @id @default(uuid())
-  userId                String    @unique @map("user_id")
-  traits                Json      @default("{}")
-  confidenceScore       Float     @default(0.3) @map("confidence_score")
-  onboardingCompletedAt DateTime? @map("onboarding_completed_at")
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("personas")
-}
-
 model ConversationSession {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  channel   String
-  summary   String?
-  startedAt DateTime  @default(now()) @map("started_at")
-  endedAt   DateTime? @map("ended_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            BigInt    @id
+  userId        BigInt    @map("user_id")
+  channel       String    @db.VarChar(16)
+  title         String?   @db.VarChar(64)
+  currentLeafId BigInt?   @map("current_leaf_id")
+  lastMessageAt DateTime  @default(now()) @map("last_message_at") @db.Timestamptz(3)
+  archivedAt    DateTime? @map("archived_at") @db.Timestamptz(3)
+  startedAt     DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages ConversationMessage[]
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentLeaf ConversationMessage?  @relation("SessionCurrentLeaf", fields: [currentLeafId], references: [id], onDelete: SetNull)
+  messages    ConversationMessage[] @relation("SessionMessages")
+  llmUsages   LlmUsage[]
 
-  @@index([userId, startedAt])
+  @@index([userId, lastMessageAt])
+  @@index([userId, archivedAt])
   @@map("conversation_sessions")
 }
 
 model ConversationMessage {
-  id         String   @id @default(uuid())
-  sessionId  String   @map("session_id")
-  userId     String   @map("user_id")
-  role       String
-  content    String   @db.Text
-  intentJson Json?    @map("intent_json")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id              BigInt   @id
+  sessionId       BigInt   @map("session_id")
+  userId          BigInt   @map("user_id")
+  parentMessageId BigInt?  @map("parent_message_id")
+  role            String   @db.VarChar(16)
+  content         String   @default("") @db.Text
+  status          String   @default("completed") @db.VarChar(16)
+  intentJson      Json?    @map("intent_json") @db.JsonB
+  tokenCount      Int?     @map("token_count")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session  ConversationSession    @relation("SessionMessages", fields: [sessionId], references: [id], onDelete: Cascade)
+  user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent   ConversationMessage?   @relation("MessageTree", fields: [parentMessageId], references: [id], onDelete: SetNull)
+  children ConversationMessage[]  @relation("MessageTree")
+  leafOf   ConversationSession[]  @relation("SessionCurrentLeaf")
 
+  @@index([sessionId, parentMessageId])
+  @@index([parentMessageId])
   @@index([sessionId, createdAt])
   @@index([userId, createdAt])
   @@map("conversation_messages")
 }
 
-model Episode {
-  id              String    @id @default(uuid())
-  userId          String    @map("user_id")
-  title           String
-  content         String    @db.Text
-  emotionTag      String?   @map("emotion_tag")
-  importanceScore Float     @default(0.5) @map("importance_score")
-  occurredAt      DateTime  @default(now()) @map("occurred_at")
-  sourceSessionId String?   @map("source_session_id")
-  createdAt       DateTime  @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, occurredAt])
-  @@map("episodes")
-}
-
 model MemoryChunk {
-  id          String    @id @default(uuid())
-  userId      String    @map("user_id")
-  memoryType  String    @map("memory_type")
-  content     String    @db.Text
-  importance  Float     @default(0.5)
-  sourceRef   String?   @map("source_ref")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id         BigInt   @id
+  userId     BigInt   @map("user_id")
+  memoryType String   @map("memory_type") @db.VarChar(32)
+  content    String   @db.Text
+  importance Float    @default(0.5)
+  sourceRef  String?  @map("source_ref") @db.VarChar(128)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, memoryType])
+  @@index([userId, importance, createdAt])
   @@map("memory_chunks")
+}
+
+model LlmUsage {
+  id               BigInt   @id
+  userId           BigInt   @map("user_id")
+  sessionId        BigInt?  @map("session_id")
+  purpose          String   @db.VarChar(32)
+  model            String   @db.VarChar(64)
+  promptTokens     Int      @default(0) @map("prompt_tokens")
+  completionTokens Int      @default(0) @map("completion_tokens")
+  totalTokens      Int      @default(0) @map("total_tokens")
+  estimated        Boolean  @default(false)
+  requestId        String?  @map("request_id") @db.VarChar(128)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session ConversationSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([purpose, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("llm_usage")
 }

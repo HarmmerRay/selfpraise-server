@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # ===== 基础设施 =====
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: selfpraise-postgres
     restart: unless-stopped
     environment:
@@ -34,6 +34,57 @@ services:
       timeout: 5s
       retries: 5
 
+  # ===== 监控（本地完整栈必起，与 postgres/redis 一并 docker compose up -d） =====
+  # Prometheus：http://localhost:9090  → scrape host.docker.internal:3000/metrics
+  # Grafana：  http://localhost:3001  admin / admin（运营后台「请求监控」iframe）
+  # 配置：deploy/prometheus/ 、deploy/grafana/
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: selfpraise-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9090/-/ready']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: selfpraise-grafana
+    restart: unless-stopped
+    ports:
+      - '3001:3000'
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_SERVER_ROOT_URL: http://localhost:3001
+      # 允许被运营后台 iframe 嵌入（默认会 X-Frame-Options: deny）
+      GF_SECURITY_ALLOW_EMBEDDING: 'true'
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/json/http-requests.json
+      GF_SECURITY_COOKIE_SAMESITE: disabled
+
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
   # ===== 应用服务（生产部署用） =====
   # 使用方式：docker-compose --profile prod up -d
   api:
@@ -56,3 +107,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:

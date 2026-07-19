@@ -1,0 +1,19 @@
+# HugMe 本地 Prometheus 采集配置
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus 自身
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Nest API（跑在宿主机 :3000；Docker Desktop / macOS 用 host.docker.internal）
+  - job_name: selfpraise-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+        labels:
+          service: selfpraise-api
+          env: local
