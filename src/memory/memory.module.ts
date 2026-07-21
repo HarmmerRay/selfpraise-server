@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AgnesLlmModule } from '../conversation/agnes-llm.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../common/redis/redis.module';
 import { AuthModule } from '../auth/auth.module';
@@ -21,6 +22,7 @@ import { MemoryRetrievalService } from './memory-retrieval.service';
     PrismaModule,
     RedisModule,
     AuthModule,
+    AgnesLlmModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [MemoryController],
@@ -29,7 +31,7 @@ import { MemoryRetrievalService } from './memory-retrieval.service';
     LtmCacheService,
     LongTermMemoryService,
     MemoryOrchestratorService,
-    EmbeddingService, // 保留服务；db_design 无 embedding 列，暂不落库
+    EmbeddingService,
     LlmUsageService,
     MemoryQueueService,
     MemoryWorkerService,

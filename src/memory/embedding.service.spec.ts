@@ -1,14 +1,34 @@
-import { fakeEmbedding } from './short-term-memory.service';
+import { EmbeddingService } from './embedding.service';
 
-describe('fakeEmbedding', () => {
-  it('returns fixed dim and unit-ish norm', () => {
-    const v = fakeEmbedding('你好世界', 32);
-    expect(v).toHaveLength(32);
-    const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
-    expect(norm).toBeCloseTo(1, 5);
+describe('EmbeddingService', () => {
+  const prevMode = process.env.EMBEDDING_MODE;
+
+  afterEach(() => {
+    if (prevMode === undefined) delete process.env.EMBEDDING_MODE;
+    else process.env.EMBEDDING_MODE = prevMode;
   });
 
-  it('is deterministic', () => {
-    expect(fakeEmbedding('abc', 16)).toEqual(fakeEmbedding('abc', 16));
+  it('isEnabled is false when EMBEDDING_MODE empty', () => {
+    delete process.env.EMBEDDING_MODE;
+    const svc = new EmbeddingService();
+    expect(svc.isEnabled()).toBe(false);
+  });
+
+  it('isEnabled is true when EMBEDDING_MODE=local', () => {
+    process.env.EMBEDDING_MODE = 'local';
+    const svc = new EmbeddingService();
+    expect(svc.isEnabled()).toBe(true);
+  });
+
+  it('embed returns null when disabled', async () => {
+    delete process.env.EMBEDDING_MODE;
+    const svc = new EmbeddingService();
+    await expect(svc.embed('你好')).resolves.toBeNull();
+  });
+
+  it('formats pgvector literal', () => {
+    process.env.EMBEDDING_MODE = '';
+    const svc = new EmbeddingService();
+    expect(svc.toPgVectorLiteral([0.1, 0.2])).toBe('[0.1,0.2]');
   });
 });

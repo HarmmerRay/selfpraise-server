@@ -1,10 +1,18 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { AgnesLlmService } from '../conversation/agnes-llm.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { LongTermMemoryService } from './long-term-memory.service';
-import { LtmCacheService } from './short-term-memory.service';
-import { MemoryQueueService } from './memory-queue.service';
 import { bid } from '../common/id/snowflake';
+import {
+  buildExperienceExtractMessages,
+  formatTranscriptForExtract,
+  heuristicExtractExperiences,
+  parseExperienceExtractResponse,
+} from './experience-extract';
+import { LongTermMemoryService } from './long-term-memory.service';
+import { LlmUsageService } from './llm-usage.service';
+import { MemoryQueueService } from './memory-queue.service';
+import { LtmCacheService } from './short-term-memory.service';
 
 @Injectable()
 export class MemoryWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -17,6 +25,8 @@ export class MemoryWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly ltm: LongTermMemoryService,
     private readonly ltmCache: LtmCacheService,
+    private readonly agnes: AgnesLlmService,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   onModuleInit() {
@@ -63,23 +73,52 @@ export class MemoryWorkerService implements OnModuleInit, OnModuleDestroy {
     });
     if (messages.length === 0) return;
 
-    const digest = messages
-      .slice(-12)
-      .map((m) => `${m.role}: ${m.content.slice(0, 200)}`)
-      .join('\n');
-
-    const content = `会话要点（${job.trigger}）：${digest.slice(0, 500)}`;
-    const type = job.trigger === 'explicit' ? 'experience' : 'preference';
-
-    const created = await this.ltm.saveFacet(
+    const transcript = formatTranscriptForExtract(messages);
+    let experiences = await this.extractViaLlm(
       job.userId,
-      type,
-      content,
-      0.55,
+      job.sessionId,
+      transcript,
+    );
+    if (experiences.length === 0) {
+      experiences = heuristicExtractExperiences(messages);
+    }
+    if (experiences.length === 0) {
+      this.logger.debug(
+        `no experience for session ${job.sessionId} (${job.trigger})`,
+      );
+      return;
+    }
+
+    const created = await this.ltm.saveExperiences(
+      job.userId,
+      experiences,
       `session:${job.sessionId}`,
     );
     await this.ltmCache.del(job.userId);
-    this.logger.log(`extracted memory ${created.id} for user ${job.userId}`);
+    this.logger.log(
+      `extracted ${created.length}/${experiences.length} experience(s) for user ${job.userId}`,
+    );
+  }
+
+  private async extractViaLlm(
+    userId: string,
+    sessionId: string,
+    transcript: string,
+  ) {
+    const messages = buildExperienceExtractMessages(transcript);
+    const result = await this.agnes.completeChat(messages, { temperature: 0.2 });
+    if (result.content) {
+      await this.llmUsage.record({
+        userId,
+        sessionId,
+        purpose: 'memory_extract',
+        model: this.agnes.getModelName(),
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        estimated: result.promptTokens == null,
+      });
+    }
+    return parseExperienceExtractResponse(result.content);
   }
 
   /** 补偿：24h 内且沉寂 ≥6h 的 session */

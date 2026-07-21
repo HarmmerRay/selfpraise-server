@@ -65,21 +65,78 @@ export class AgnesLlmService {
     return prompt;
   }
 
+  getModelName(): string {
+    return this.model;
+  }
+
+  private isFakeMode(): boolean {
+    const llmMode =
+      this.configService.get<string>('LLM_MODE', '') ||
+      process.env.LLM_MODE ||
+      '';
+    return !this.apiKey || llmMode === 'fake';
+  }
+
+  /**
+   * 非流式补全（记忆提炼等）。fake 模式返回空内容，由调用方走启发式。
+   */
+  async completeChat(
+    messages: ChatMessage[],
+    options?: { temperature?: number },
+  ): Promise<{
+    content: string;
+    promptTokens?: number;
+    completionTokens?: number;
+  }> {
+    if (this.isFakeMode()) {
+      return { content: '', promptTokens: 0, completionTokens: 0 };
+    }
+
+    const url = `${this.baseUrl}/chat/completions`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages,
+        stream: false,
+        temperature: options?.temperature ?? 0.2,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error(`Agnes AI 返回错误: ${response.status} ${text}`);
+      throw new Error(`Agnes AI API 错误: ${response.status}`);
+    }
+
+    const json = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    return {
+      content: json.choices?.[0]?.message?.content?.trim() ?? '',
+      promptTokens: json.usage?.prompt_tokens,
+      completionTokens: json.usage?.completion_tokens,
+    };
+  }
+
   /**
    * 流式调用 Agnes AI Chat Completions API。
    * 逐 delta yield 文本片段（AsyncGenerator）。
    */
   async *streamChat(messages: ChatMessage[]): AsyncGenerator<string> {
-    const llmMode = this.configService.get<string>('LLM_MODE', '') ||
-      process.env.LLM_MODE ||
-      '';
-    if (!this.apiKey || llmMode === 'fake') {
+    if (this.isFakeMode()) {
       // 本地无 key / 显式 fake：产出可验收的 step→delta→done 流
       const lastUser = [...messages].reverse().find((m) => m.role === 'user');
       const hint = (lastUser?.content ?? '').slice(0, 40);
-      const text = hint.includes('解释') || hint.includes('关键词')
-        ? `（开发假回复）这个词可以理解为对话里提到的核心概念。结合你刚才说的内容：「${hint}」——先抓住定义，再想一个小例子就够用了。`
-        : `（开发假回复）我听到了：「${hint || '你的分享'}」。先肯定你愿意开口这件事本身，就已经很棒了。想继续聊聊细节吗？`;
+      const text =
+        hint.includes('解释') || hint.includes('关键词')
+          ? `（开发假回复）这个词可以理解为对话里提到的核心概念。结合你刚才说的内容：「${hint}」——先抓住定义，再想一个小例子就够用了。`
+          : `（开发假回复）我听到了：「${hint || '你的分享'}」。先肯定你愿意开口这件事本身，就已经很棒了。想继续聊聊细节吗？`;
       for (const part of text.match(/.{1,12}/g) ?? [text]) {
         yield part;
       }
@@ -94,7 +151,9 @@ export class AgnesLlmService {
       temperature: 0.7,
     };
 
-    this.logger.debug(`调用 Agnes AI: model=${this.model}, messages=${messages.length} 条`);
+    this.logger.debug(
+      `调用 Agnes AI: model=${this.model}, messages=${messages.length} 条`,
+    );
 
     const response = await fetch(url, {
       method: 'POST',
