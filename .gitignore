@@ -15,3 +15,6 @@ audio/
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent 开发临时任务记录（见 hugme/AGENTS.md）
+task.md
