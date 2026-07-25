@@ -27,6 +27,15 @@ export default () => ({
     model: process.env.AGNES_MODEL || 'agnes-2.0-flash',
     baseUrl: process.env.AGNES_BASE_URL || 'https://apihub.agnes-ai.com/v1',
   },
+  /**
+   * 可选 LLM 网关（LiteLLM Proxy）。
+   * 设置 LLM_BASE_URL 后走网关（多源 fallback）；未设置则直连 Agnes。
+   */
+  llm: {
+    baseUrl: process.env.LLM_BASE_URL || '',
+    apiKey: process.env.LLM_API_KEY || process.env.LITELLM_MASTER_KEY || '',
+    model: process.env.LLM_MODEL || 'hugme-agnes',
+  },
   sms: {
     provider: process.env.SMS_PROVIDER || 'dev',
   },

@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import {
   Counter,
+  Histogram,
   Registry,
   collectDefaultMetrics,
   register as defaultRegister,
@@ -14,6 +15,7 @@ import { normalizeRoute } from './route-normalize';
 export class HttpMetricsService implements OnModuleInit {
   readonly registry: Registry = defaultRegister;
   private requests!: Counter<string>;
+  private llmDuration!: Histogram<string>;
 
   onModuleInit() {
     collectDefaultMetrics({ register: this.registry });
@@ -21,14 +23,29 @@ export class HttpMetricsService implements OnModuleInit {
     const existing = this.registry.getSingleMetric('http_requests_total');
     if (existing) {
       this.requests = existing as Counter<string>;
-      return;
+    } else {
+      this.requests = new Counter({
+        name: 'http_requests_total',
+        help: 'HTTP 请求总数',
+        labelNames: ['method', 'route', 'status_code'],
+        registers: [this.registry],
+      });
     }
-    this.requests = new Counter({
-      name: 'http_requests_total',
-      help: 'HTTP 请求总数',
-      labelNames: ['method', 'route', 'status_code'],
-      registers: [this.registry],
-    });
+
+    const existingLlm = this.registry.getSingleMetric(
+      'llm_request_duration_seconds',
+    );
+    if (existingLlm) {
+      this.llmDuration = existingLlm as Histogram<string>;
+    } else {
+      this.llmDuration = new Histogram({
+        name: 'llm_request_duration_seconds',
+        help: 'LLM API 调用耗时（秒）',
+        labelNames: ['operation', 'status', 'phase'],
+        buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60],
+        registers: [this.registry],
+      });
+    }
   }
 
   observe(method: string, path: string, statusCode: number) {
@@ -39,6 +56,20 @@ export class HttpMetricsService implements OnModuleInit {
       route,
       status_code: String(statusCode || 0),
     });
+  }
+
+  /** operation: stream|complete；phase: ttft|total；status: ok|error|fake */
+  observeLlm(
+    operation: string,
+    status: string,
+    phase: string,
+    seconds: number,
+  ) {
+    if (!this.llmDuration) return;
+    this.llmDuration.observe(
+      { operation, status, phase },
+      Math.max(0, seconds),
+    );
   }
 
   async metricsText(): Promise<string> {

@@ -172,15 +172,23 @@ export class ConversationController {
           });
 
           let fullContent = '';
-          let started = false;
+          let contentStarted = false;
           const stream = this.agnesLlmService.streamChat(messages);
-          for await (const rawDelta of stream) {
-            let delta = rawDelta;
-            if (!started) {
+          for await (const chunk of stream) {
+            if (chunk.kind === 'thinking') {
+              this.emit(subscriber, {
+                type: 'thinking',
+                delta: chunk.text,
+                done: false,
+              });
+              continue;
+            }
+            let delta = chunk.text;
+            if (!contentStarted) {
               // Agnes 常以多余换行开头，跳过纯空白前缀
               delta = delta.replace(/^\s*\n+/, '').replace(/^\n+/, '');
               if (!delta.trim()) continue;
-              started = true;
+              contentStarted = true;
             }
             fullContent += delta;
             this.emit(subscriber, { type: 'delta', delta, done: false });
@@ -209,7 +217,7 @@ export class ConversationController {
               userId,
               sessionId,
               purpose: 'chat',
-              model: process.env.AGNES_MODEL || 'agnes-default',
+              model: this.agnesLlmService.getModelName(),
               promptTokens: estimateTokens(systemPrompt),
               completionTokens: estimateTokens(fullContent),
               estimated: true,
@@ -298,15 +306,21 @@ export class ConversationController {
             status: 'start',
           });
           let full = '';
-          let started = false;
-          for await (const rawDelta of this.agnesLlmService.streamChat(
-            messages,
-          )) {
-            let delta = rawDelta;
-            if (!started) {
+          let contentStarted = false;
+          for await (const chunk of this.agnesLlmService.streamChat(messages)) {
+            if (chunk.kind === 'thinking') {
+              this.emit(subscriber, {
+                type: 'thinking',
+                delta: chunk.text,
+                done: false,
+              });
+              continue;
+            }
+            let delta = chunk.text;
+            if (!contentStarted) {
               delta = delta.replace(/^\s*\n+/, '').replace(/^\n+/, '');
               if (!delta.trim()) continue;
-              started = true;
+              contentStarted = true;
             }
             full += delta;
             this.emit(subscriber, { type: 'delta', delta, done: false });
@@ -320,7 +334,7 @@ export class ConversationController {
             userId,
             sessionId,
             purpose: 'explain',
-            model: process.env.AGNES_MODEL || 'agnes-default',
+            model: this.agnesLlmService.getModelName(),
             promptTokens: estimateTokens(system + keyword),
             completionTokens: estimateTokens(full),
             estimated: true,
